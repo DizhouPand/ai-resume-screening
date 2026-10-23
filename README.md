@@ -50,3 +50,11 @@ Cloudflare Workers 已提供原生入口与部署配置，步骤见下文。
 配置后重新部署。云端不能通过 `localhost` 连接本机 Dify；可使用 HTTPS 公网地址或 Cloudflare Tunnel 暴露的地址。不要将密钥写入 Wrangler 配置、GitHub 仓库或静态网页。
 
 本机仍使用 `node dev-server.js`；Cloudflare 使用 `worker.mjs`，Vercel 使用 `api/generate.js`。
+
+## Vercel 从 GitHub 部署
+
+在 Vercel 中选择 Add New → Project，导入 `DizhouPand/ai-resume-screening`，使用 `main` 分支。Framework Preset 选择 Other，根目录使用仓库根目录，Build Command 和 Output Directory 留空（无需构建）。
+
+在项目环境变量中添加 `DIFY_API_BASE` 和 `DIFY_API_KEY` 后部署。`DIFY_API_BASE` 必须是 Vercel 可访问的地址，例如 `https://你的Dify域名/v1`；不能填本机 localhost。密钥仅供服务端函数读取。修改环境变量后需要重新部署。
+
+Vercel 使用根目录 `index.html` 与 `api/generate.js`；Cloudflare 专用入口、构建产物和本机配置通过 `.vercelignore` 排除。

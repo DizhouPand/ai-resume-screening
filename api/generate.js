@@ -1,3 +1,12 @@
+function cleanOutput(value) {
+  if (typeof value !== 'string') return '';
+  let text = value.replace(/<think\b[^>]*>[\s\S]*?<\/think\s*>/gi, '');
+  // 不完整的思考块不展示；只有结束标签时也丢弃其前内容。
+  text = text.replace(/<think\b[^>]*>[\s\S]*$/gi, '');
+  if (/<\/think\s*>/i.test(text)) text = text.split(/<\/think\s*>/i).pop();
+  return text.replace(/<!--[\s\S]*?-->/g, '').trim();
+}
+
 'use strict';
 const LIMIT = 64 * 1024;
 module.exports = async function generate(req, res) {
@@ -55,15 +64,15 @@ module.exports = async function generate(req, res) {
     const result = await response.json();
     if (result?.data?.status !== 'succeeded') return send(502, { error: '本次筛选未完成，请再试一次。' });
     const outputs = result.data.outputs;
-    const aliases = { question: 'text', verdict1: 'verdict', verdict2: 'interview_result2' };
+    const aliases = { verdict1: 'verdict', verdict2: 'interview_result2' };
     const value = name => {
       const v = outputs?.[name] ?? outputs?.[aliases[name]];
-      return typeof v === 'string' ? v.trim() : '';
+      return cleanOutput(v);
     };
     // 只返回指定结果字段，不转发上游响应、错误或配置。
     if (value('verdict2')) return send(200, { type: 'low', verdict: value('verdict2') });
     if (value('verdict1')) return send(200, { type: 'review', verdict: value('verdict1') });
-    if (value('question')) return send(200, { type: 'interview', question: value('question') });
+    if (value('text') || value('question')) return send(200, { type: 'interview', text: value('text'), question: value('question') });
     return send(502, { error: '筛选结果格式不符合约定，请检查工作流输出配置。' });
   } catch {
     return send(502, { error: controller.signal.aborted ? '请再试一次。' : '暂时无法连接筛选服务，请稍后重试。' });

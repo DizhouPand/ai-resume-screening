@@ -34,6 +34,10 @@ async function generate(request, env) {
   if (typeof input !== 'string' || !input.trim()) return send(400, { error: '请先填写简历描述。' });
   if (Array.from(input).length > 10000) return send(400, { error: '简历描述最多填写 10000 字。' });
   const key = env.DIFY_API_KEY?.trim();
+  if (key && !/^[\x21-\x7e]+$/.test(key)) {
+    console.error('DIFY_DIAGNOSTIC', 'invalid-key-characters');
+    return send(503, { error: 'Dify 密钥含有无效字符，请重新填写纯英文密钥后部署。' });
+  }
   let url;
   try {
     url = new URL((env.DIFY_API_BASE || '').replace(/\/+$/, '') + '/workflows/run');
@@ -44,25 +48,34 @@ async function generate(request, env) {
   const controller = new AbortController();
   // 预留时间向浏览器返回中文超时提示。
   const timer = setTimeout(() => controller.abort(), 55000);
+  let stage = 'request';
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ inputs: { job_description: input.trim() }, response_mode: 'blocking', user: 'xiaozhou-web' }),
       signal: controller.signal,
-      redirect: 'error',
+      redirect: 'manual',
     });
     if (!response.ok) return send(502, { error: '筛选服务暂时不可用，请稍后重试。' });
+    stage = 'response-json';
     const result = await response.json();
     if (result?.data?.status !== 'succeeded') return send(502, { error: '本次筛选未完成，请再试一次。' });
     const outputs = result.data.outputs;
-    const value = name => typeof outputs?.[name] === 'string' ? outputs[name].trim() : '';
+    const aliases = { question: 'text', verdict1: 'verdict', verdict2: 'interview_result2' };
+    const value = name => {
+      const v = outputs?.[name] ?? outputs?.[aliases[name]];
+      return typeof v === 'string' ? v.trim() : '';
+    };
     // 只返回指定结果字段，不转发上游响应、错误或配置。
     if (value('verdict2')) return send(200, { type: 'low', verdict: value('verdict2') });
     if (value('verdict1')) return send(200, { type: 'review', verdict: value('verdict1') });
     if (value('question')) return send(200, { type: 'interview', question: value('question') });
     return send(502, { error: '筛选结果格式不符合约定，请检查工作流输出配置。' });
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const category = /ByteString|header|character|ISO-8859/i.test(message) ? 'header-format' : /redirect/i.test(message) ? 'redirect' : /URL|string|Request/i.test(message) ? 'request-format' : stage === 'response-json' ? 'invalid-json' : 'network-or-runtime';
+    console.error('DIFY_DIAGNOSTIC', { stage, category, name: error instanceof Error ? error.name : 'unknown' });
     return send(502, { error: controller.signal.aborted ? '请再试一次。' : '暂时无法连接筛选服务，请稍后重试。' });
   } finally { clearTimeout(timer); }
 }

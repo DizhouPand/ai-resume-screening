@@ -55,7 +55,11 @@ module.exports = async function generate(req, res) {
     const result = await response.json();
     if (result?.data?.status !== 'succeeded') return send(502, { error: '本次筛选未完成，请再试一次。' });
     const outputs = result.data.outputs;
-    const value = name => typeof outputs?.[name] === 'string' ? outputs[name].trim() : '';
+    const aliases = { question: 'text', verdict1: 'verdict', verdict2: 'interview_result2' };
+    const value = name => {
+      const v = outputs?.[name] ?? outputs?.[aliases[name]];
+      return typeof v === 'string' ? v.trim() : '';
+    };
     // 只返回指定结果字段，不转发上游响应、错误或配置。
     if (value('verdict2')) return send(200, { type: 'low', verdict: value('verdict2') });
     if (value('verdict1')) return send(200, { type: 'review', verdict: value('verdict1') });
